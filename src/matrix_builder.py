@@ -1,3 +1,4 @@
+#converts the ratings table into a sparse user-item matrix.
 from scipy.sparse import coo_matrix
 
 def build_sparse_matrix(train):

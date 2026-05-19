@@ -1,3 +1,4 @@
+#trains the recommendation model
 from implicit.als import AlternatingLeastSquares
 
 def train_als(
