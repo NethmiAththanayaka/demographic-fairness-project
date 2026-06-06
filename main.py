@@ -67,8 +67,14 @@ def run_movielens_all():
     print(cegar["history"])
     print(cegar["message"])
 
+    print("\nBest alpha:")
+    print(cegar["best_alpha"])
+
+    print("\nBest group table:")
+    print(cegar["best_result"]["group_table"])
+
     print("\nFinal group table:")
-    print(cegar["final_result"]["group_table"]) 
+    print(cegar["final_result"]["group_table"])
 
     return {
         "rmse_results": rmse_results,
