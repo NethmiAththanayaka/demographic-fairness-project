@@ -18,6 +18,7 @@ from src.lastfm_pipeline import (
     print_lastfm_results,
 )
 
+from src.movielens_pipeline import run_movielens_cegar_repair
 
 def run_movielens_all():
     print_section("MovieLens RMSE Baselines")
@@ -56,6 +57,18 @@ def run_movielens_all():
 
     print("\nSelected group-specific alpha:")
     print(alpha_results["selected_group"])
+
+    print_section("MovieLens Counterexample-Guided Repair")
+    cegar = run_movielens_cegar_repair(
+        demographic="intersection_group",
+        eps=0.01,
+    )
+
+    print(cegar["history"])
+    print(cegar["message"])
+
+    print("\nFinal group table:")
+    print(cegar["final_result"]["group_table"]) 
 
     return {
         "rmse_results": rmse_results,
