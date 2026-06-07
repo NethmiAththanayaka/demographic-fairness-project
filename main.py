@@ -19,7 +19,7 @@ from src.lastfm_pipeline import (
 )
 
 from src.movielens_pipeline import run_movielens_cegar_repair
-from src.movielens_pipeline import run_movielens_cegar_repair
+from src.cegar_compare import summarize_repair_results
 
 def run_movielens_all():
     print_section("MovieLens RMSE Baselines")

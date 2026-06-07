@@ -6,7 +6,7 @@ def summarize_repair_results(
     weighted_result=None,
     alpha_result=None,
     cegar_result=None,
-    metric_name="Recall@10"
+    eps=0.01,
 ):
     rows = []
 
@@ -14,7 +14,7 @@ def summarize_repair_results(
         "method": "Baseline ALS",
         "overall_recall": baseline_result["overall_recall"],
         "gap": baseline_result["gap"],
-        "success": baseline_result["gap"] <= 0.01,
+        "success": baseline_result["gap"] <= eps,
     })
 
     if weighted_result is not None:
@@ -23,7 +23,7 @@ def summarize_repair_results(
             "method": "Weighted mitigation",
             "overall_recall": best_weighted["overall_recall"],
             "gap": best_weighted["gap"],
-            "success": best_weighted["gap"] <= 0.01,
+            "success": best_weighted["gap"] <= eps,
         })
 
     if alpha_result is not None:
@@ -32,7 +32,7 @@ def summarize_repair_results(
             "method": "Group alpha reranking",
             "overall_recall": best_group["overall_recall"],
             "gap": best_group["gap"],
-            "success": best_group["gap"] <= 0.01,
+            "success": best_group["gap"] <= eps,
         })
 
     if cegar_result is not None:
