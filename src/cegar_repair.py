@@ -3,7 +3,10 @@ import pandas as pd
 from src.evaluation import recall_at_k_for_users_model, max_gap
 from src.fairness_metrics import demo_table, max_gap_with_pair
 from src.smt_verification import verify_table
-from src.reranking import get_popular_items_for_group, evaluate_group_rerank
+from src.reranking import (
+    get_popular_items_for_group,
+    evaluate_group_alpha_map_rerank,
+)
 
 
 def get_counterexample(group_table, demographic, metric_col="recall@10"):
@@ -55,8 +58,43 @@ def evaluate_baseline_fairness(
         "recall_df": recall_df,
         "group_table": group_table,
         "gap": max_gap(group_table, metric_col=metric_col),
-        "overall_recall": float(recall_df[metric_col].mean()) if len(recall_df) > 0 else 0.0,
+        "overall_recall": float(recall_df[metric_col].mean())
+        if len(recall_df) > 0
+        else 0.0,
     }
+
+
+def evaluate_alpha_map_repair(
+    model,
+    user_items,
+    test_df,
+    users_df,
+    u2i,
+    m2i,
+    alpha_map,
+    boost_item_map,
+    demographic="age_group",
+    K=10,
+    C=200,
+):
+    boost_items = set()
+
+    for items in boost_item_map.values():
+        boost_items.update(items)
+
+    return evaluate_group_alpha_map_rerank(
+        model=model,
+        user_items=user_items,
+        test_df=test_df,
+        users_df=users_df,
+        u2i=u2i,
+        m2i=m2i,
+        alpha_map=alpha_map,
+        demographic=demographic,
+        boost_items=boost_items,
+        K=K,
+        C=C,
+    )
 
 
 def cegar_alpha_repair_loop(
@@ -71,13 +109,24 @@ def cegar_alpha_repair_loop(
     eps=0.01,
     K=10,
     C=200,
-    alpha_start=0.0,
     eta=2.0,
     alpha_max=1.0,
     max_iters=20,
     top_n_items=200,
-    patience=4,
+    patience=5,
 ):
+    """
+    Counterexample-guided fairness repair with memory.
+
+    At each iteration:
+      1. Evaluate group fairness.
+      2. SMT verifies gap <= eps.
+      3. If violated, identify worst group as counterexample.
+      4. Add/update that group in alpha_map.
+      5. Re-evaluate repaired recommendations.
+      6. Keep the best repair found.
+    """
+
     metric_col = f"recall@{K}"
 
     history = []
@@ -95,9 +144,11 @@ def cegar_alpha_repair_loop(
 
     best_result = current
     best_gap = current["gap"]
-    best_alpha = alpha_start
+    best_alpha_map = {}
 
-    alpha = alpha_start
+    alpha_map = {}
+    boost_item_map = {}
+
     no_improve_count = 0
     seen_states = set()
 
@@ -114,25 +165,28 @@ def cegar_alpha_repair_loop(
             metric_col=metric_col,
         )
 
+        target_group = counterexample["worst_group"]
         violation_amount = max(0.0, current["gap"] - eps)
 
-        history.append({
-            "iteration": it,
-            "alpha": alpha,
-            "gap": current["gap"],
-            "overall_recall": current["overall_recall"],
-            "violation": verification["violation"],
-            "violation_amount": violation_amount,
-            "worst_group": counterexample["worst_group"],
-            "best_group": counterexample["best_group"],
-            "worst_value": counterexample["worst_value"],
-            "best_value": counterexample["best_value"],
-        })
+        history.append(
+            {
+                "iteration": it,
+                "gap": current["gap"],
+                "overall_recall": current["overall_recall"],
+                "violation": verification["violation"],
+                "violation_amount": violation_amount,
+                "target_group": target_group,
+                "best_group": counterexample["best_group"],
+                "worst_value": counterexample["worst_value"],
+                "best_value": counterexample["best_value"],
+                "alpha_map": dict(alpha_map),
+            }
+        )
 
         if current["gap"] < best_gap:
             best_gap = current["gap"]
             best_result = current
-            best_alpha = alpha
+            best_alpha_map = dict(alpha_map)
             no_improve_count = 0
         else:
             no_improve_count += 1
@@ -143,14 +197,15 @@ def cegar_alpha_repair_loop(
                 "final_result": current,
                 "best_result": best_result,
                 "history": pd.DataFrame(history),
-                "best_alpha": best_alpha,
+                "best_alpha_map": best_alpha_map,
                 "message": "Fairness constraint satisfied.",
             }
 
         state_key = (
             round(current["gap"], 6),
-            counterexample["worst_group"],
+            target_group,
             counterexample["best_group"],
+            tuple(sorted(alpha_map.items())),
         )
 
         if state_key in seen_states:
@@ -161,39 +216,37 @@ def cegar_alpha_repair_loop(
         if no_improve_count >= patience:
             break
 
-        target_group = counterexample["worst_group"]
+        if target_group not in boost_item_map:
+            boost_item_map[target_group] = get_popular_items_for_group(
+                train_df=train_df,
+                users_df=users_df,
+                target_group=target_group,
+                demographic=demographic,
+                item_col="movie_id",
+                user_col="user_id",
+                m2i=m2i,
+                top_n=top_n_items,
+            )
 
-        boost_items = get_popular_items_for_group(
-            train_df=train_df,
-            users_df=users_df,
-            target_group=target_group,
-            demographic=demographic,
-            item_col="movie_id",
-            user_col="user_id",
-            m2i=m2i,
-            top_n=top_n_items,
-        )
+        old_alpha = alpha_map.get(target_group, 0.0)
+        new_alpha = min(old_alpha + eta * violation_amount, alpha_max)
+        alpha_map[target_group] = new_alpha
 
-        alpha = min(alpha + eta * violation_amount, alpha_max)
-
-        repaired = evaluate_group_rerank(
+        current = evaluate_alpha_map_repair(
             model=model,
             user_items=user_items,
             test_df=test_df,
             users_df=users_df,
             u2i=u2i,
             m2i=m2i,
-            target_group=target_group,
+            alpha_map=alpha_map,
+            boost_item_map=boost_item_map,
             demographic=demographic,
-            boost_items=boost_items,
             K=K,
             C=C,
-            alpha=alpha,
         )
 
-        current = repaired
-
-        if alpha >= alpha_max:
+        if all(alpha >= alpha_max for alpha in alpha_map.values()):
             break
 
     return {
@@ -201,6 +254,6 @@ def cegar_alpha_repair_loop(
         "final_result": current,
         "best_result": best_result,
         "history": pd.DataFrame(history),
-        "best_alpha": best_alpha,
+        "best_alpha_map": best_alpha_map,
         "message": "Could not satisfy fairness constraint within limits. Returning best repair found.",
     }
