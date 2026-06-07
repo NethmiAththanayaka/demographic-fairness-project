@@ -20,6 +20,7 @@ from src.lastfm_pipeline import (
 
 from src.movielens_pipeline import run_movielens_cegar_repair
 from src.cegar_compare import summarize_repair_results
+from src.epsilon_experiments import certification_table
 
 def run_movielens_all():
     print_section("MovieLens RMSE Baselines")
@@ -89,7 +90,16 @@ def run_movielens_all():
 
     print(comparison)
 
-    return {
+    print_section("Epsilon Certification Table")
+
+    cert_table = certification_table(
+        comparison,
+        eps_values=[0.01, 0.015, 0.02, 0.03],
+    )
+
+    print(cert_table)
+
+  return {
         "rmse_results": rmse_results,
         "baseline": baseline,
         "smt_checks": smt_checks,
@@ -97,6 +107,7 @@ def run_movielens_all():
         "alpha_results": alpha_results,
         "cegar": cegar,
         "comparison": comparison,
+        "cert_table": cert_table,
     }
 
 
