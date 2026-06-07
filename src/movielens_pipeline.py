@@ -596,11 +596,12 @@ def run_movielens_cegar_repair(
         eps=eps,
         K=K,
         C=C,
-        eta=2.0,
-        alpha_max=1.0,
         max_iters=20,
-        top_n_items=200,
         patience=5,
+        alpha_candidates=[0.01, 0.02, 0.05, 0.1, 0.2, 0.5],
+        top_n_candidates=[50, 100, 200, 500],
+        utility_tolerance=0.001,
+        best_group_tolerance=0.0005,
     )
 
     return repair_output
