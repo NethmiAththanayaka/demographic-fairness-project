@@ -40,6 +40,7 @@ from src.alpha_search import select_alpha
 from src.smt_verification import verify_table
 
 from src.cegar_repair import cegar_alpha_repair_loop
+from src.cegar_repair import cegar_alpha_repair_loop
 # --------------------------------------------------
 # Prepare MovieLens
 # --------------------------------------------------
@@ -552,6 +553,54 @@ def run_movielens_cegar_repair(
         max_iters=20,
         top_n_items=200,
         patience=4,
+    )
+
+    return repair_output
+
+def run_movielens_cegar_repair(
+    data_dir="data/ml-1m",
+    demographic="intersection_group",
+    eps=0.01,
+    K=10,
+    C=200,
+    factors=64,
+    regularization=0.01,
+    iterations=20,
+):
+    from src.fairness_metrics import add_intersection_column
+
+    ratings, users, movies = prepare_movielens_data(data_dir)
+
+    users = add_intersection_column(
+        users,
+        cols=("gender", "age_group"),
+        new_col="intersection_group",
+    )
+
+    model, user_items, train, test, u2i, i2u, m2i, i2m = train_movielens_als(
+        ratings=ratings,
+        factors=factors,
+        regularization=regularization,
+        iterations=iterations,
+    )
+
+    repair_output = cegar_alpha_repair_loop(
+        model=model,
+        user_items=user_items,
+        train_df=train,
+        test_df=test,
+        users_df=users,
+        u2i=u2i,
+        m2i=m2i,
+        demographic=demographic,
+        eps=eps,
+        K=K,
+        C=C,
+        eta=2.0,
+        alpha_max=1.0,
+        max_iters=20,
+        top_n_items=200,
+        patience=5,
     )
 
     return repair_output

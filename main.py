@@ -19,6 +19,7 @@ from src.lastfm_pipeline import (
 )
 
 from src.movielens_pipeline import run_movielens_cegar_repair
+from src.movielens_pipeline import run_movielens_cegar_repair
 
 def run_movielens_all():
     print_section("MovieLens RMSE Baselines")
@@ -59,22 +60,34 @@ def run_movielens_all():
     print(alpha_results["selected_group"])
 
     print_section("MovieLens Counterexample-Guided Repair")
+
     cegar = run_movielens_cegar_repair(
         demographic="intersection_group",
         eps=0.01,
     )
 
+    print("\nCEGAR history:")
     print(cegar["history"])
+
+    print("\nCEGAR message:")
     print(cegar["message"])
 
-    print("\nBest alpha:")
-    print(cegar["best_alpha"])
+    print("\nBest alpha map:")
+    print(cegar["best_alpha_map"])
 
-    print("\nBest group table:")
+    print("\nBest CEGAR group table:")
     print(cegar["best_result"]["group_table"])
 
-    print("\nFinal group table:")
-    print(cegar["final_result"]["group_table"])
+    print_section("Repair Method Comparison")
+
+    comparison = summarize_repair_results(
+        baseline_result=baseline["results"]["gender_age"],
+        weighted_result=mitigation,
+        alpha_result=alpha_results,
+        cegar_result=cegar,
+    )
+
+    print(comparison)
 
     return {
         "rmse_results": rmse_results,
@@ -82,6 +95,8 @@ def run_movielens_all():
         "smt_checks": smt_checks,
         "mitigation": mitigation,
         "alpha_results": alpha_results,
+        "cegar": cegar,
+        "comparison": comparison,
     }
 
 
