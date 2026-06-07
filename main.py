@@ -99,7 +99,7 @@ def run_movielens_all():
 
     print(cert_table)
 
-  return {
+    return {
         "rmse_results": rmse_results,
         "baseline": baseline,
         "smt_checks": smt_checks,
