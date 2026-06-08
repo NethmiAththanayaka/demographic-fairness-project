@@ -602,6 +602,7 @@ def run_movielens_cegar_repair(
         top_n_candidates=[50, 100, 200, 500],
         utility_tolerance=0.001,
         best_group_tolerance=0.0005,
+        target_eps=eps,
     )
 
     return repair_output

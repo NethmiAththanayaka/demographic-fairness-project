@@ -116,14 +116,6 @@ def is_safe_repair(
     utility_tolerance=0.001,
     best_group_tolerance=0.0005,
 ):
-    """
-    Accept repair only if:
-      1. gap decreases
-      2. target group improves
-      3. overall recall does not drop much
-      4. best group is not harmed much
-    """
-
     before_table = before_result["group_table"]
     after_table = after_result["group_table"]
 
@@ -200,14 +192,8 @@ def search_safe_repair_candidate(
     top_n_candidates=None,
     utility_tolerance=0.001,
     best_group_tolerance=0.0005,
+    target_eps=0.02,
 ):
-    """
-    Search candidate repairs and return the best safe one.
-
-    This does NOT reduce the advantaged group.
-    It only tries to improve the target group.
-    """
-
     if alpha_candidates is None:
         alpha_candidates = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5]
 
@@ -288,27 +274,35 @@ def search_safe_repair_candidate(
                 metric_col,
             )
 
-            tried_rows.append({
-                "target_group": target_group,
-                "best_group": best_group,
-                "top_n": top_n,
-                "alpha_delta": alpha_delta,
-                "new_alpha": trial_alpha_map[target_group],
-                "gap": trial_result["gap"],
-                "gap_reduction": gap_reduction,
-                "overall_recall": trial_result["overall_recall"],
-                "recall_delta": recall_delta,
-                "target_before": target_before,
-                "target_after": target_after,
-                "target_delta": target_after - target_before,
-                "safe": safe,
-            })
+            tried_rows.append(
+                {
+                    "target_group": target_group,
+                    "best_group": best_group,
+                    "top_n": top_n,
+                    "alpha_delta": alpha_delta,
+                    "new_alpha": trial_alpha_map[target_group],
+                    "gap": trial_result["gap"],
+                    "gap_reduction": gap_reduction,
+                    "overall_recall": trial_result["overall_recall"],
+                    "recall_delta": recall_delta,
+                    "target_before": target_before,
+                    "target_after": target_after,
+                    "target_delta": target_after - target_before,
+                    "safe": safe,
+                    "satisfies_eps": trial_result["gap"] <= target_eps,
+                    "repair_size": sum(trial_alpha_map.values()),
+                }
+            )
 
             if safe:
+                satisfies_eps = trial_result["gap"] <= target_eps
+                repair_size = sum(trial_alpha_map.values())
+
                 score = (
+                    int(satisfies_eps),
+                    -repair_size,
+                    trial_result["overall_recall"],
                     gap_reduction,
-                    recall_delta,
-                    target_after - target_before,
                 )
 
                 if best_candidate is None or score > best_score:
@@ -318,6 +312,8 @@ def search_safe_repair_candidate(
                         "boost_item_map": trial_boost_item_map,
                         "top_n": top_n,
                         "alpha_delta": alpha_delta,
+                        "repair_size": repair_size,
+                        "satisfies_eps": satisfies_eps,
                         "score": score,
                     }
                     best_score = score
@@ -343,21 +339,10 @@ def cegar_alpha_repair_loop(
     top_n_candidates=None,
     utility_tolerance=0.001,
     best_group_tolerance=0.0005,
+    target_eps=None,
 ):
-    """
-    Safe Counterexample-Guided Fairness Repair.
-
-    At each iteration:
-      1. Verify fairness.
-      2. If violated, identify worst/best group pair.
-      3. Search candidate repairs that only help the worst group.
-      4. Accept only safe repairs:
-            - gap decreases
-            - target group improves
-            - overall recall preserved
-            - best group not harmed
-      5. Repeat.
-    """
+    if target_eps is None:
+        target_eps = eps
 
     metric_col = f"recall@{K}"
 
@@ -401,18 +386,20 @@ def cegar_alpha_repair_loop(
         best_group = counterexample["best_group"]
         violation_amount = max(0.0, current["gap"] - eps)
 
-        history.append({
-            "iteration": it,
-            "gap": current["gap"],
-            "overall_recall": current["overall_recall"],
-            "violation": verification["violation"],
-            "violation_amount": violation_amount,
-            "target_group": target_group,
-            "best_group": best_group,
-            "worst_value": counterexample["worst_value"],
-            "best_value": counterexample["best_value"],
-            "alpha_map": dict(alpha_map),
-        })
+        history.append(
+            {
+                "iteration": it,
+                "gap": current["gap"],
+                "overall_recall": current["overall_recall"],
+                "violation": verification["violation"],
+                "violation_amount": violation_amount,
+                "target_group": target_group,
+                "best_group": best_group,
+                "worst_value": counterexample["worst_value"],
+                "best_value": counterexample["best_value"],
+                "alpha_map": dict(alpha_map),
+            }
+        )
 
         if current["gap"] < best_gap:
             best_gap = current["gap"]
@@ -429,7 +416,8 @@ def cegar_alpha_repair_loop(
                 "best_result": best_result,
                 "history": pd.DataFrame(history),
                 "candidate_history": pd.concat(all_candidate_rows, ignore_index=True)
-                if all_candidate_rows else pd.DataFrame(),
+                if all_candidate_rows
+                else pd.DataFrame(),
                 "best_alpha_map": best_alpha_map,
                 "message": "Fairness constraint satisfied.",
             }
@@ -454,6 +442,7 @@ def cegar_alpha_repair_loop(
             top_n_candidates=top_n_candidates,
             utility_tolerance=utility_tolerance,
             best_group_tolerance=best_group_tolerance,
+            target_eps=target_eps,
         )
 
         tried_df["iteration"] = it
@@ -488,7 +477,8 @@ def cegar_alpha_repair_loop(
         "best_result": best_result,
         "history": pd.DataFrame(history),
         "candidate_history": pd.concat(all_candidate_rows, ignore_index=True)
-        if all_candidate_rows else pd.DataFrame(),
+        if all_candidate_rows
+        else pd.DataFrame(),
         "best_alpha_map": best_alpha_map,
         "message": "Could not satisfy fairness constraint within limits. Returning best safe repair found.",
     }
