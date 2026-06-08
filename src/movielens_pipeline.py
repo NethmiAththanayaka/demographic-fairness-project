@@ -556,7 +556,50 @@ def run_movielens_cegar_repair(
     )
 
     return repair_output
+def run_movielens_cegar_eps_sweep(
+    data_dir="data/ml-1m",
+    demographic="intersection_group",
+    eps_values=None,
+    K=10,
+    C=200,
+    factors=64,
+    regularization=0.01,
+    iterations=20,
+):
+    if eps_values is None:
+        eps_values = [0.01, 0.02, 0.03]
 
+    results = {}
+    rows = []
+
+    for eps in eps_values:
+        result = run_movielens_cegar_repair(
+            data_dir=data_dir,
+            demographic=demographic,
+            eps=eps,
+            K=K,
+            C=C,
+            factors=factors,
+            regularization=regularization,
+            iterations=iterations,
+        )
+
+        results[eps] = result
+
+        rows.append({
+            "eps": eps,
+            "success": result["success"],
+            "best_gap": result["best_result"]["gap"],
+            "best_recall": result["best_result"]["overall_recall"],
+            "best_alpha_map": result["best_alpha_map"],
+            "message": result["message"],
+        })
+
+    return {
+        "summary": pd.DataFrame(rows),
+        "results": results,
+    }
+    
 def run_movielens_cegar_repair(
     data_dir="data/ml-1m",
     demographic="intersection_group",

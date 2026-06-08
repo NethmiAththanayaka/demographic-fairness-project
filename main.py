@@ -21,6 +21,7 @@ from src.lastfm_pipeline import (
 from src.movielens_pipeline import run_movielens_cegar_repair
 from src.cegar_compare import summarize_repair_results
 from src.epsilon_experiments import certification_table
+from src.movielens_pipeline import run_movielens_cegar_eps_sweep
 
 def run_movielens_all():
     print_section("MovieLens RMSE Baselines")
@@ -99,6 +100,15 @@ def run_movielens_all():
 
     print(cert_table)
 
+    print_section("MovieLens CEGAR Epsilon Sweep")
+
+    cegar_eps = run_movielens_cegar_eps_sweep(
+        demographic="intersection_group",
+        eps_values=[0.01, 0.02, 0.03],
+    )
+
+    print(cegar_eps["summary"])
+
     return {
         "rmse_results": rmse_results,
         "baseline": baseline,
@@ -108,6 +118,7 @@ def run_movielens_all():
         "cegar": cegar,
         "comparison": comparison,
         "cert_table": cert_table,
+        "cegar_eps": cegar_eps,
     }
 
 
