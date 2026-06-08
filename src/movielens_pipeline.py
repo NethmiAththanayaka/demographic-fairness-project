@@ -28,28 +28,26 @@ from src.fairness_metrics import (
 )
 
 from src.mitigation import sweep_group_boosts
+
 from src.reranking import (
     get_longtail_items,
     get_popular_items_for_group,
-    evaluate_longtail_rerank,
-    evaluate_group_rerank,
     sweep_longtail_alpha,
     sweep_group_alpha,
 )
+
 from src.alpha_search import select_alpha
 from src.smt_verification import verify_table
+from src.cegar_repair import cegar_alpha_repair_loop
 
-from src.cegar_repair import cegar_alpha_repair_loop
-from src.cegar_repair import cegar_alpha_repair_loop
+
 # --------------------------------------------------
 # Prepare MovieLens
 # --------------------------------------------------
 
 def prepare_movielens_data(data_dir="data/ml-1m"):
     ratings, users, movies = load_movielens(data_dir)
-
     users = enrich_user_demographics(users)
-
     return ratings, users, movies
 
 
@@ -86,9 +84,7 @@ def train_movielens_als(
 # RMSE Baselines
 # --------------------------------------------------
 
-def run_movielens_rmse_baselines(
-    data_dir="data/ml-1m",
-):
+def run_movielens_rmse_baselines(data_dir="data/ml-1m"):
     ratings, users, movies = prepare_movielens_data(data_dir)
 
     train, test = time_based_user_split(
@@ -344,8 +340,6 @@ def run_movielens_alpha_reranking(
         iterations=iterations,
     )
 
-    metric_col = f"recall@{K}"
-
     baseline_result = evaluate_movielens_als_fairness(
         model=model,
         user_items=user_items,
@@ -473,133 +467,9 @@ def run_movielens_smt_checks(
 
 
 # --------------------------------------------------
-# Print Helpers
+# Counterexample-Guided Repair
 # --------------------------------------------------
 
-def print_rmse_results(results):
-    for demographic, result in results.items():
-        print("\n==============================")
-        print(f"RMSE Baselines by {demographic}")
-        print("==============================")
-
-        print("\nGlobal Mean Overall RMSE:")
-        print(result["global_mean"]["overall_rmse"])
-
-        print("\nGlobal Mean Group RMSE:")
-        print(result["global_mean"]["group_rmse"])
-
-        print("\nUser-Item Bias Overall RMSE:")
-        print(result["user_item_bias"]["overall_rmse"])
-
-        print("\nUser-Item Bias Group RMSE:")
-        print(result["user_item_bias"]["group_rmse"])
-
-
-def print_movielens_results(results):
-    for demographic, result in results.items():
-        print("\n==============================")
-        print(f"MovieLens fairness: {demographic}")
-        print("==============================")
-
-        print(result["group_table"])
-        print("Summary:", result["summary"])
-        print("Gap:", result["gap"])
-        print("Overall Recall:", result["overall_recall"])
-
-# --------------------------------------------------
-# connect with cegar_repair
-# --------------------------------------------------
-def run_movielens_cegar_repair(
-    data_dir="data/ml-1m",
-    demographic="intersection_group",
-    eps=0.01,
-    K=10,
-    factors=64,
-    regularization=0.01,
-    iterations=20,
-):
-    from src.fairness_metrics import add_intersection_column
-
-    ratings, users, movies = prepare_movielens_data(data_dir)
-
-    users = add_intersection_column(
-        users,
-        cols=("gender", "age_group"),
-        new_col="intersection_group",
-    )
-
-    model, user_items, train, test, u2i, i2u, m2i, i2m = train_movielens_als(
-        ratings=ratings,
-        factors=factors,
-        regularization=regularization,
-        iterations=iterations,
-    )
-
-    repair_output = cegar_alpha_repair_loop(
-        model=model,
-        user_items=user_items,
-        train_df=train,
-        test_df=test,
-        users_df=users,
-        u2i=u2i,
-        m2i=m2i,
-        demographic=demographic,
-        eps=eps,
-        K=K,
-        C=200,
-        alpha_start=0.0,
-        eta=2.0,
-        alpha_max=1.0,
-        max_iters=20,
-        top_n_items=200,
-        patience=4,
-    )
-
-    return repair_output
-def run_movielens_cegar_eps_sweep(
-    data_dir="data/ml-1m",
-    demographic="intersection_group",
-    eps_values=None,
-    K=10,
-    C=200,
-    factors=64,
-    regularization=0.01,
-    iterations=20,
-):
-    if eps_values is None:
-        eps_values = [0.01, 0.02, 0.03]
-
-    results = {}
-    rows = []
-
-    for eps in eps_values:
-        result = run_movielens_cegar_repair(
-            data_dir=data_dir,
-            demographic=demographic,
-            eps=eps,
-            K=K,
-            C=C,
-            factors=factors,
-            regularization=regularization,
-            iterations=iterations,
-        )
-
-        results[eps] = result
-
-        rows.append({
-            "eps": eps,
-            "success": result["success"],
-            "best_gap": result["best_result"]["gap"],
-            "best_recall": result["best_result"]["overall_recall"],
-            "best_alpha_map": result["best_alpha_map"],
-            "message": result["message"],
-        })
-
-    return {
-        "summary": pd.DataFrame(rows),
-        "results": results,
-    }
-    
 def run_movielens_cegar_repair(
     data_dir="data/ml-1m",
     demographic="intersection_group",
@@ -646,6 +516,90 @@ def run_movielens_cegar_repair(
         utility_tolerance=0.001,
         best_group_tolerance=0.0005,
         target_eps=eps,
+        repair_mode="below_mean",
+        max_repair_groups=3,
     )
 
     return repair_output
+
+
+def run_movielens_cegar_eps_sweep(
+    data_dir="data/ml-1m",
+    demographic="intersection_group",
+    eps_values=None,
+    K=10,
+    C=200,
+    factors=64,
+    regularization=0.01,
+    iterations=20,
+):
+    if eps_values is None:
+        eps_values = [0.01, 0.02, 0.03]
+
+    results = {}
+    rows = []
+
+    for eps in eps_values:
+        result = run_movielens_cegar_repair(
+            data_dir=data_dir,
+            demographic=demographic,
+            eps=eps,
+            K=K,
+            C=C,
+            factors=factors,
+            regularization=regularization,
+            iterations=iterations,
+        )
+
+        results[eps] = result
+
+        rows.append(
+            {
+                "eps": eps,
+                "success": result["success"],
+                "best_gap": result["best_result"]["gap"],
+                "best_recall": result["best_result"]["overall_recall"],
+                "best_alpha_map": result["best_alpha_map"],
+                "message": result["message"],
+            }
+        )
+
+    return {
+        "summary": pd.DataFrame(rows),
+        "results": results,
+    }
+
+
+# --------------------------------------------------
+# Print Helpers
+# --------------------------------------------------
+
+def print_rmse_results(results):
+    for demographic, result in results.items():
+        print("\n==============================")
+        print(f"RMSE Baselines by {demographic}")
+        print("==============================")
+
+        print("\nGlobal Mean Overall RMSE:")
+        print(result["global_mean"]["overall_rmse"])
+
+        print("\nGlobal Mean Group RMSE:")
+        print(result["global_mean"]["group_rmse"])
+
+        print("\nUser-Item Bias Overall RMSE:")
+        print(result["user_item_bias"]["overall_rmse"])
+
+        print("\nUser-Item Bias Group RMSE:")
+        print(result["user_item_bias"]["group_rmse"])
+
+
+def print_movielens_results(results):
+    for demographic, result in results.items():
+        print("\n==============================")
+        print(f"MovieLens fairness: {demographic}")
+        print("==============================")
+
+        print(result["group_table"])
+        print("Summary:", result["summary"])
+        print("Gap:", result["gap"])
+        print("Overall Recall:", result["overall_recall"])
