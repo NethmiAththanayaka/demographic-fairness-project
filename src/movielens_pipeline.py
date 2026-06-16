@@ -601,10 +601,10 @@ def print_movielens_results(results):
 
         print(result["group_table"])
         print("Summary:")
-            for k, v in result["summary"].items():
-                if isinstance(v, float):
-                    print(f"  {k}: {v:.6f}")
-                else:
-                    print(f"  {k}: {v}")
+        for k, v in result["summary"].items():
+            if isinstance(v, float):
+                print(f"  {k}: {v:.6f}")
+            else:
+                print(f"  {k}: {v}")
         print("Gap:", result["gap"])
         print("Overall Recall:", result["overall_recall"])
