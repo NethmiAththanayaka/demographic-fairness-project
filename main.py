@@ -34,7 +34,8 @@ def run_movielens_all():
 
     print_section("MovieLens SMT Fairness Checks")
     smt_checks = run_movielens_smt_checks(eps=0.01)
-    print(smt_checks["checks"])
+    import json
+    print(json.dumps(smt_checks["checks"], indent=4))
 
     print_section("MovieLens Weighted Mitigation")
     mitigation = run_movielens_weighted_mitigation(
